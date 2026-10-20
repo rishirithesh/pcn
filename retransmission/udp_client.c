@@ -4,37 +4,74 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 
 int main()
 {
     int sock;
-    struct sockaddr_in server, client;
-    socklen_t len = sizeof(client);
+    struct sockaddr_in server;
     char buffer[1024];
+    socklen_t len = sizeof(server);
 
     sock = socket(AF_INET, SOCK_DGRAM, 0);
 
     server.sin_family = AF_INET;
     server.sin_port = htons(8081);
-    server.sin_addr.s_addr = INADDR_ANY;
+    inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
 
-    bind(sock, (struct sockaddr *)&server, sizeof(server));
+    struct timeval timeout;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
 
-    printf("UDP Server waiting...\n");
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+               &timeout, sizeof(timeout));
+
+    int seq = 1;
 
     while (1)
     {
-        int n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0,
-                         (struct sockaddr *)&client, &len);
+        printf("Enter message (exit to quit): ");
+        fgets(buffer, sizeof(buffer), stdin);
 
-        if (n < 0)
-            continue;
+        if (strncmp(buffer, "exit", 4) == 0)
+            break;
 
-        buffer[n] = '\0';
-        printf("Received: %s\n", buffer);
+        char message[1024];
+        snprintf(message, sizeof(message), "%d:%s", seq, buffer);
 
-        sendto(sock, "ACK", 3, 0,
-               (struct sockaddr *)&client, len);
+        int ack_received = 0;
+
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            sendto(sock, message, strlen(message), 0,
+                   (struct sockaddr *)&server, len);
+
+            printf("Sent packet %d (attempt %d)\n",
+                   seq, attempt);
+
+            char ack[1024];
+            int n = recvfrom(sock, ack, sizeof(ack) - 1, 0,
+                             (struct sockaddr *)&server, &len);
+
+            if (n > 0)
+            {
+                ack[n] = '\0';
+
+                if (strcmp(ack, "ACK") == 0)
+                {
+                    printf("ACK received for packet %d\n", seq);
+                    ack_received = 1;
+                    break;
+                }
+            }
+
+            printf("Timeout! Retransmitting...\n");
+        }
+
+        if (!ack_received)
+            printf("Packet %d failed after 3 attempts\n", seq);
+
+        seq++;
     }
 
     close(sock);
