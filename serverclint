@@ -1,0 +1,47 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+int main()
+{
+    int s, a, b, sum, checksum;
+    int data[3];
+    struct sockaddr_in server;
+
+    printf("Enter first 8-bit word: ");
+    scanf("%d", &a);
+
+    printf("Enter second 8-bit word: ");
+    scanf("%d", &b);
+
+    sum = a + b;
+
+    while (sum > 255)
+        sum = (sum & 255) + (sum >> 8);
+
+    checksum = (~sum) & 255;
+
+    data[0] = a;
+    data[1] = b;
+    data[2] = checksum;
+
+    printf("Checksum: %d\n", checksum);
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+
+    server.sin_family = AF_INET;
+    server.sin_port = htons(8080);
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    connect(s, (struct sockaddr *)&server, sizeof(server));
+
+    write(s, data, sizeof(data));
+
+    printf("Data sent to server.\n");
+
+    close(s);
+
+    return 0;
+}
